@@ -1,2 +1,2 @@
 # parrotproxy
-golang http(https) reserve proxy
+golang http(https) reverse proxy
