@@ -1,54 +1,38 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"strings"
-	"time"
-
-	"crypto/rand"
-	"crypto/tls"
-	"golang.org/x/crypto/acme/autocert"
-	"golang.org/x/net/http2"
 )
 
 func main() {
-	var cache autocert.Cache = autocert.DirCache("certs")
-	m := autocert.Manager{
-		Cache:      cache,
-		Prompt:     autocert.AcceptTOS,
-		HostPolicy: nil,
-		Email:      "doracl1@gmail.com",
+	cer, err := tls.LoadX509KeyPair("server.crt", "server.key")
+	if err != nil {
+		log.Println(err)
+		return
 	}
-	getCertificate := func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-		res, err := m.GetCertificate(hello)
-		log.Printf("Getting cert for %s", hello.ServerName)
-		if err != nil {
-			log.Print("GetCertificate debug: ", err)
-		}
-		return res, err
-	}
-	tlsConfig := &tls.Config{
-		Rand:           rand.Reader,
-		Time:           time.Now,
-		NextProtos:     []string{http2.NextProtoTLS, "http/1.1"},
-		MinVersion:     tls.VersionTLS12,
-		GetCertificate: getCertificate,
-	}
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cer}}
 
 	ln, err := tls.Listen("tcp", ":https", tlsConfig)
 	if err != nil {
 		log.Fatalf("ssl listener %v", err)
 	}
 	defer ln.Close()
+	tmp := make([]byte, 256)
 	for {
 		conn, err := ln.Accept()
+		n, err := conn.Read(tmp)
 		if err != nil {
-			log.Println(err)
+			if err != io.EOF {
+				fmt.Println("read error:", err)
+			}
 			continue
 		}
+		fmt.Println("rx:", string(tmp[:n]))
 		go forward("192.168.0.153:80", conn, false)
 	}
 }
@@ -64,6 +48,7 @@ func split(addr net.Addr) (string, string, error) {
 
 func forward(backendHostport string, conn net.Conn, proxyproto bool) {
 	backend, err := net.Dial("tcp", backendHostport)
+	log.Printf("%v\n", conn.LocalAddr())
 	if err != nil {
 		log.Printf("Dial failed: %v", err)
 		conn.Close()
